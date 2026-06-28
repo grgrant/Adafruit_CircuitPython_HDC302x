@@ -230,6 +230,13 @@ class HDC302x:
         """
         Read temperature in auto mode.
 
+        .. warning::
+            An auto-mode readout returns and then clears the latched result. Reading this
+            property together with :attr:`auto_relative_humidity` as two separate reads
+            consumes the sample twice: the second read returns the cleared sentinel
+            (+130 degC / +100 %RH) or NACKs mid-conversion. Use :attr:`auto_measurements`
+            to read both at once. Reading this property on its own is fine.
+
         :return: The temperature in degrees Celsius.
         """
         temp, _ = self._read_auto(0xE000)
@@ -239,6 +246,13 @@ class HDC302x:
     def auto_relative_humidity(self) -> float:
         """
         Read relative humidity in auto mode.
+
+        .. warning::
+            An auto-mode readout returns and then clears the latched result. Reading this
+            property together with :attr:`auto_temperature` as two separate reads consumes
+            the sample twice: the second read returns the cleared sentinel (+130 degC /
+            +100 %RH) or NACKs mid-conversion. Use :attr:`auto_measurements` to read both
+            at once. Reading this property on its own is fine.
 
         :return: The relative humidity in percent.
         """
