@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Bob Grant for Adafruit Industries
+#
 # SPDX-License-Identifier: MIT
 """
 HDC302x driver test / verification harness.
@@ -25,8 +27,8 @@ import board
 from adafruit_hdc302x import HDC302x
 
 # --- flags -------------------------------------------------------------------
-RUN_EEPROM_TESTS = False   # offsets, NVM threshold transfer, power-on override (writes EEPROM!)
-RUN_HEATER_TEST = True     # briefly pulses the heater; skews T/RH while on
+RUN_EEPROM_TESTS = False  # offsets, NVM threshold transfer, power-on override (writes EEPROM!)
+RUN_HEATER_TEST = True  # briefly pulses the heater; skews T/RH while on
 # -----------------------------------------------------------------------------
 
 try:
@@ -39,12 +41,14 @@ hdc = HDC302x(i2c)
 
 def check(label, value, lo, hi):
     ok = lo <= value <= hi
-    print("  [{}] {} = {!r}  (expect {}..{})".format("PASS" if ok else "FAIL", label, value, lo, hi))
+    print(
+        "  [{}] {} = {!r}  (expect {}..{})".format("PASS" if ok else "FAIL", label, value, lo, hi)
+    )
     return ok
 
 
 def section(name):
-    print("\n=== {} ===".format(name))
+    print(f"\n=== {name} ===")
 
 
 def measure():
@@ -69,9 +73,9 @@ def measure():
 # --- IDs ---------------------------------------------------------------------
 section("Device IDs")
 mfg = hdc.manufacturer_id
-print("  manufacturer_id = 0x{:04X}  (expect 0x3000)".format(mfg))
+print(f"  manufacturer_id = 0x{mfg:04X}  (expect 0x3000)")
 nist = hdc.nist_id
-print("  nist_id = {}  (48-bit serial, 6 bytes)".format(["0x{:02X}".format(b) for b in nist]))
+print("  nist_id = {}  (48-bit serial, 6 bytes)".format([f"0x{b:02X}" for b in nist]))
 assert mfg == 0x3000, "unexpected manufacturer id"
 assert len(nist) == 6, "NIST id should be 6 bytes"
 
@@ -112,7 +116,7 @@ try:
     try:
         arh = hdc.auto_relative_humidity
         if arh >= 99.9:
-            print("  [bug #3] auto_relative_humidity = {:.1f} (cleared-result sentinel)".format(arh))
+            print(f"  [bug #3] auto_relative_humidity = {arh:.1f} (cleared-result sentinel)")
         else:
             check("auto_relative_humidity %", arh, 0, 100)
     except OSError:
@@ -128,11 +132,11 @@ finally:
 # --- status register ---------------------------------------------------------
 section("Status register")
 st = hdc.status
-print("  status = 0x{:04X}".format(st))
-print("  bit15 overall-alert = {}".format(bool(st & (1 << 15))))
-print("  bit13 heater        = {}".format(bool(st & (1 << 13))))
-print("  bit4  reset-detected= {}".format(bool(st & (1 << 4))))
-print("  high_alert() = {}   low_alert() = {}".format(hdc.high_alert, hdc.low_alert))
+print(f"  status = 0x{st:04X}")
+print(f"  bit15 overall-alert = {bool(st & (1 << 15))}")
+print(f"  bit13 heater        = {bool(st & (1 << 13))}")
+print(f"  bit4  reset-detected= {bool(st & (1 << 4))}")
+print(f"  high_alert() = {hdc.high_alert}   low_alert() = {hdc.low_alert}")
 print("  (PR1 fix #2: verify high/low_alert track bits 9/7 and 8/6 below)")
 
 
@@ -152,16 +156,20 @@ section("Alert thresholds — set / latch / clear walkthrough")
 
 def show(tag):
     s = hdc.status
-    print("  {}".format(tag))
-    print("    status=0x{:04X}  raw bits -> RHhi={} Thi={} | RHlo={} Tlo={}".format(
-        s, bool(s & (1 << 9)), bool(s & (1 << 7)), bool(s & (1 << 8)), bool(s & (1 << 6))))
-    print("    high_alert()={}  low_alert()={}   (should match raw hi / lo bits once patched)".format(
-        hdc.high_alert, hdc.low_alert))
+    print(f"  {tag}")
+    print(
+        f"    status=0x{s:04X}  raw bits -> RHhi={bool(s & (1 << 9))} "
+        + f"Thi={bool(s & (1 << 7))} | RHlo={bool(s & (1 << 8))} Tlo={bool(s & (1 << 6))}"
+    )
+    print(
+        f"    high_alert()={hdc.high_alert}  low_alert()={hdc.low_alert}   "
+        + "(should match raw hi / lo bits once patched)"
+    )
 
 
 def try_clear_status():
     try:
-        hdc.clear_status()      # PR2 method; harmless if not yet implemented
+        hdc.clear_status()  # PR2 method; harmless if not yet implemented
     except AttributeError:
         pass
 
@@ -169,15 +177,15 @@ def try_clear_status():
 def program_then_eval(tag, set_high, clear_high, set_low, clear_low):
     """Program thresholds in sleep (best practice), then run auto mode so the comparator
     evaluates them, then read the status bits."""
-    hdc.auto_mode = "EXIT_AUTO_MODE"            # sleep
+    hdc.auto_mode = "EXIT_AUTO_MODE"  # sleep
     time.sleep(0.02)
     hdc.set_high_alert(temp=set_high[0], humid=set_high[1])
     hdc.clear_high_alert(temp=clear_high[0], humid=clear_high[1])
     hdc.set_low_alert(temp=set_low[0], humid=set_low[1])
     hdc.clear_low_alert(temp=clear_low[0], humid=clear_low[1])
     try_clear_status()
-    hdc.auto_mode = "1MPS_LP0"                  # measure -> comparator evaluates each second
-    time.sleep(1.3)                            # let a couple of conversions land
+    hdc.auto_mode = "1MPS_LP0"  # measure -> comparator evaluates each second
+    time.sleep(1.3)  # let a couple of conversions land
     show(tag)
     hdc.auto_mode = "EXIT_AUTO_MODE"
     time.sleep(0.02)
@@ -187,27 +195,34 @@ def program_then_eval(tag, set_high, clear_high, set_low, clear_low):
 t0, rh0 = measure()
 base_t = t0 if t0 is not None else 25.0
 base_rh = rh0 if rh0 is not None else 50.0
-print("  ambient ~ {:.1f}C / {:.0f}%RH".format(base_t, base_rh))
+print(f"  ambient ~ {base_t:.1f}C / {base_rh:.0f}%RH")
 
 # 1) Force HIGH: Set-High just BELOW ambient (ambient > threshold -> high alert).
 program_then_eval(
     "after Set-High BELOW ambient  (expect RHhi/Thi = True)",
     set_high=(base_t - 3.0, max(base_rh - 5.0, 1.0)),
     clear_high=(base_t - 4.0, max(base_rh - 6.0, 1.0)),
-    set_low=(-40.0, 0.0), clear_low=(-39.0, 1.0))
+    set_low=(-40.0, 0.0),
+    clear_low=(-39.0, 1.0),
+)
 
 # 2) Clear HIGH: thresholds well ABOVE ambient.
 program_then_eval(
     "after raising thresholds  (expect HIGH cleared)",
-    set_high=(125.0, 100.0), clear_high=(124.0, 99.0),
-    set_low=(-40.0, 0.0), clear_low=(-39.0, 1.0))
+    set_high=(125.0, 100.0),
+    clear_high=(124.0, 99.0),
+    set_low=(-40.0, 0.0),
+    clear_low=(-39.0, 1.0),
+)
 
 # 3) Force LOW: Set-Low just ABOVE ambient (ambient < threshold -> low alert).
 program_then_eval(
     "after Set-Low ABOVE ambient  (expect RHlo/Tlo = True)",
-    set_high=(125.0, 100.0), clear_high=(124.0, 99.0),
+    set_high=(125.0, 100.0),
+    clear_high=(124.0, 99.0),
     set_low=(base_t + 3.0, min(base_rh + 5.0, 99.0)),
-    clear_low=(base_t + 4.0, min(base_rh + 6.0, 99.0)))
+    clear_low=(base_t + 4.0, min(base_rh + 6.0, 99.0)),
+)
 
 # Restore wide-open / tracking effectively off.
 hdc.auto_mode = "EXIT_AUTO_MODE"
@@ -221,26 +236,26 @@ try_clear_status()
 # --- heater ------------------------------------------------------------------
 if RUN_HEATER_TEST:
     section("Heater")
-    print("  heater (off) = {}".format(hdc.heater))
+    print(f"  heater (off) = {hdc.heater}")
     hdc.heater = "QUARTER_POWER"
     time.sleep(0.2)
     on = hdc.heater
-    print("  heater (quarter) = {}  (expect True)".format(on))
+    print(f"  heater (quarter) = {on}  (expect True)")
     hdc.heater = "OFF"
     time.sleep(0.2)
-    print("  heater (off) = {}  (expect False)".format(hdc.heater))
+    print(f"  heater (off) = {hdc.heater}  (expect False)")
 
 
 # --- offsets (EEPROM!) -------------------------------------------------------
 if RUN_EEPROM_TESTS:
     section("Offsets  (EEPROM write — endurance 1000..50000 cycles)")
     saved = hdc.offsets
-    print("  current offsets (T, RH) = {}".format(saved))
+    print(f"  current offsets (T, RH) = {saved}")
     hdc.offsets = (1.0247, 1.953125)  # ~6x T-LSB, ~10x RH-LSB; clean multiples
-    time.sleep(0.08)                  # PR1 fix #4: tProg wait before read-back
+    time.sleep(0.08)  # PR1 fix #4: tProg wait before read-back
     back = hdc.offsets
-    print("  wrote (1.0247, 1.953125), read back {}".format(back))
-    hdc.offsets = saved               # restore
+    print(f"  wrote (1.0247, 1.953125), read back {back}")
+    hdc.offsets = saved  # restore
     time.sleep(0.08)
 else:
     print("\n(skipping EEPROM offset test; set RUN_EEPROM_TESTS=True to enable)")
