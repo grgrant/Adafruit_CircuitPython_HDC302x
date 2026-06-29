@@ -299,7 +299,6 @@ class HDC302x:
         :return: True if the high alert is activated, False otherwise.
         """
         status = self._read_command(0xF32D)
-        # bit 9 = RH High Tracking Alert, bit 7 = T High Tracking Alert (datasheet Table 7-14)
         return bool(status & ((1 << 9) | (1 << 7)))
 
     @property
