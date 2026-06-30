@@ -23,6 +23,7 @@ Set the flags below before running. EEPROM tests are OFF by default.
 import time
 
 import board
+
 from adafruit_hdc302x import HDC302x
 
 # --- flags -------------------------------------------------------------------
