@@ -23,7 +23,6 @@ Set the flags below before running. EEPROM tests are OFF by default.
 import time
 
 import board
-
 from adafruit_hdc302x import HDC302x
 
 # --- flags -------------------------------------------------------------------
@@ -31,22 +30,27 @@ RUN_EEPROM_TESTS = False  # offsets, NVM threshold transfer, power-on override (
 RUN_HEATER_TEST = True  # briefly pulses the heater; skews T/RH while on
 # -----------------------------------------------------------------------------
 
+
 # --- pass/fail accounting (Adafruit hw_tests/ convention) --------------------
-passed = 0
-failed = 0
+# Counters live as attributes on a tiny holder rather than module-level ints rebound via
+# `global` inside test(): Adafruit's ruff config extend-selects PLW0603 (global-statement)
+# with no hw_tests/ exemption, so the `global` form fails CI. Mutating an attribute needs no
+# global declaration, so this stays lint-clean while keeping the same PASS:/FAIL: output.
+class _Tally:
+    passed = 0
+    failed = 0
 
 
 def test(name, condition):
-    """Record one PASS/FAIL line and bump the module counters; return the condition so
-    callers can still branch on it. Matches the Adafruit hw_tests/ harness format the
-    serial watcher greps for."""
-    global passed, failed
+    """Record one PASS/FAIL line and bump the counters; return the condition so callers can
+    still branch on it. Matches the Adafruit hw_tests/ harness format the serial watcher
+    greps for."""
     if condition:
         print(f"PASS: {name}")
-        passed += 1
+        _Tally.passed += 1
     else:
         print(f"FAIL: {name}")
-        failed += 1
+        _Tally.failed += 1
     return condition
 
 
@@ -64,7 +68,7 @@ def measure():
     max conversion (14.1 ms), then read. Independent of library bug #1, so the alert section
     gets real ambient values and a real comparator evaluation regardless of patch state.
     Returns (temp_C, rh_pct) or (None, None) if the sensor keeps NACKing."""
-    hdc._write_command(0x2400)  # noqa: trigger LPM0 (test reaches into the driver on purpose)
+    hdc._write_command(0x2400)  # trigger LPM0 (test reaches into the driver on purpose)
     time.sleep(0.0141)
     for _ in range(3):
         try:
@@ -270,9 +274,9 @@ try:
 
 except Exception as e:  # a crash anywhere is a recorded failure, not a silent stop
     print(f"FAIL: Unhandled exception: {e}")
-    failed += 1  # keep the verdict honest -- an uncaught crash must not read as ALL PASSED
+    _Tally.failed += 1  # keep the verdict honest -- an uncaught crash must not read as ALL PASSED
 
 
-print(f"=== Summary: {passed} passed, {failed} failed ===")
-print("ALL TESTS PASSED" if passed > 0 and failed == 0 else "SOME TESTS FAILED")
+print(f"=== Summary: {_Tally.passed} passed, {_Tally.failed} failed ===")
+print("ALL TESTS PASSED" if _Tally.passed > 0 and _Tally.failed == 0 else "SOME TESTS FAILED")
 print("~~END~~")  # terminal sentinel -- MUST be the last line, outside the try/except
