@@ -26,6 +26,7 @@ Implementation Notes
 """
 
 import struct
+import time
 
 import busio
 from adafruit_bus_device import i2c_device
@@ -167,7 +168,7 @@ class HDC302x:
         return self._current_auto_mode
 
     @auto_mode.setter
-    def auto_mode(self, mode: int) -> None:
+    def auto_mode(self, mode: str) -> None:
         """
         :param mode: The auto mode to set.
         """
@@ -193,21 +194,52 @@ class HDC302x:
     def offsets(self, values: Tuple[float, float]) -> None:
         """
         :param values: A tuple containing the temperature and humidity offsets.
+
+        .. warning::
+
+            Writing offsets programs the EEPROM (endurance 1000..50000 cycles). Set
+            offsets rarely, not on every boot.
         """
         temp, humid = values  # Unpack tuple
         rh_offset = self._calculate_offset(humid, False)
         temp_offset = self._calculate_offset(temp, True)
         combined_offsets = (rh_offset << 8) | temp_offset
+        # 0xA004 programs the EEPROM. The device must be in sleep mode first, and no I2C
+        # may occur until tPROG completes (datasheet 7.5.7.5; tPROG max 77 ms).
+        self._write_command(self.AUTO_MODES["EXIT_AUTO_MODE"])
+        self._current_auto_mode = self.AUTO_MODES["EXIT_AUTO_MODE"]
         self._write_command_data(0xA004, combined_offsets)
+        time.sleep(0.08)
+
+    @property
+    def auto_measurements(self) -> Tuple[float, float]:
+        """
+        The measured temperature and relative humidity in auto mode, from a single readout.
+
+        Use this instead of reading :attr:`auto_temperature` and
+        :attr:`auto_relative_humidity` separately: a readout clears the latched result, so a
+        second separate readout returns the cleared sentinel (+130 degC / +100 %RH) or NACKs
+        mid-conversion (datasheet 7.5.7.3.2).
+
+        :return: A tuple of (temperature in degrees Celsius, relative humidity in percent).
+        """
+        return self._read_auto(0xE000)
 
     @property
     def auto_temperature(self) -> float:
         """
         Read temperature in auto mode.
 
+        .. warning::
+            An auto-mode readout returns and then clears the latched result. Reading this
+            property together with :attr:`auto_relative_humidity` as two separate reads
+            consumes the sample twice: the second read returns the cleared sentinel
+            (+130 degC / +100 %RH) or NACKs mid-conversion. Use :attr:`auto_measurements`
+            to read both at once. Reading this property on its own is fine.
+
         :return: The temperature in degrees Celsius.
         """
-        temp, _ = self._send_command_read_trh(0xE000)
+        temp, _ = self._read_auto(0xE000)
         return temp
 
     @property
@@ -215,10 +247,29 @@ class HDC302x:
         """
         Read relative humidity in auto mode.
 
+        .. warning::
+            An auto-mode readout returns and then clears the latched result. Reading this
+            property together with :attr:`auto_temperature` as two separate reads consumes
+            the sample twice: the second read returns the cleared sentinel (+130 degC /
+            +100 %RH) or NACKs mid-conversion. Use :attr:`auto_measurements` to read both
+            at once. Reading this property on its own is fine.
+
         :return: The relative humidity in percent.
         """
-        _, humid = self._send_command_read_trh(0xE000)
+        _, humid = self._read_auto(0xE000)
         return humid
+
+    @property
+    def measurements(self) -> Tuple[float, float]:
+        """
+        The measured temperature and relative humidity from a single trigger-on-demand read.
+
+        Prefer this over reading :attr:`temperature` and :attr:`relative_humidity`
+        separately, which triggers two measurements.
+
+        :return: A tuple of (temperature in degrees Celsius, relative humidity in percent).
+        """
+        return self._trigger_measurement(0x2400)
 
     @property
     def temperature(self) -> float:
@@ -227,7 +278,7 @@ class HDC302x:
 
         :return: The temperature in degrees Celsius.
         """
-        temp, _ = self._send_command_read_trh(0x2400)
+        temp, _ = self._trigger_measurement(0x2400)
         return temp
 
     @property
@@ -237,7 +288,7 @@ class HDC302x:
 
         :return: The relative humidity in percent.
         """
-        _, humid = self._send_command_read_trh(0x2400)
+        _, humid = self._trigger_measurement(0x2400)
         return humid
 
     @property
@@ -248,7 +299,8 @@ class HDC302x:
         :return: True if the high alert is activated, False otherwise.
         """
         status = self._read_command(0xF32D)
-        return bool(status & ((1 << 10) | (1 << 9)))
+        # bit 9 = RH High Tracking Alert, bit 7 = T High Tracking Alert
+        return bool(status & ((1 << 9) | (1 << 7)))
 
     @property
     def low_alert(self) -> bool:
@@ -258,9 +310,10 @@ class HDC302x:
         :return: True if the low alert is activated, False otherwise.
         """
         status = self._read_command(0xF32D)
-        return bool(status & ((1 << 12) | (1 << 11)))
+        # bit 8 = RH Low Tracking Alert, bit 6 = T Low Tracking Alert
+        return bool(status & ((1 << 8) | (1 << 6)))
 
-    def set_high_alert(self, temp: float, humid: float) -> bool:
+    def set_high_alert(self, temp: float, humid: float) -> None:
         """
         Set the high alert thresholds for temperature and humidity.
 
@@ -269,7 +322,7 @@ class HDC302x:
         """
         self._alert_command(0x611D, temp, humid)
 
-    def set_low_alert(self, temp: float, humid: float) -> bool:
+    def set_low_alert(self, temp: float, humid: float) -> None:
         """
         Set the low alert thresholds for temperature and humidity.
 
@@ -278,7 +331,7 @@ class HDC302x:
         """
         self._alert_command(0x6100, temp, humid)
 
-    def clear_high_alert(self, temp: float, humid: float) -> bool:
+    def clear_high_alert(self, temp: float, humid: float) -> None:
         """
         Clear the high alert thresholds for temperature and humidity.
 
@@ -287,7 +340,7 @@ class HDC302x:
         """
         self._alert_command(0x6116, temp, humid)
 
-    def clear_low_alert(self, temp: float, humid: float) -> bool:
+    def clear_low_alert(self, temp: float, humid: float) -> None:
         """
         Clear the low alert thresholds for temperature and humidity.
 
@@ -296,11 +349,11 @@ class HDC302x:
         """
         self._alert_command(0x610B, temp, humid)
 
-    def _write_command(self, command: int) -> bool:
+    def _write_command(self, command: int) -> None:
         with self.i2c_device as i2c:
             i2c.write(bytes([command >> 8, command & 0xFF]))
 
-    def _write_command_data(self, command: int, data: int) -> bool:
+    def _write_command_data(self, command: int, data: int) -> None:
         crc = self._calculate_crc8(struct.pack(">H", data))
         with self.i2c_device as i2c:
             i2c.write(bytes([command >> 8, command & 0xFF, data >> 8, data & 0xFF, crc]))
@@ -313,8 +366,9 @@ class HDC302x:
             raise RuntimeError("CRC check failed")
         return (result[0] << 8) | result[1]
 
-    def _send_command_read_trh(self, command: int) -> Tuple[float, float]:
-        self._write_command(command)
+    def _read_trh(self) -> Tuple[float, float]:
+        # Bare 6-byte read (no command echo) with per-word CRC. Used after a trigger
+        # conversion has completed, or for an auto-mode readout.
         with self.i2c_device as i2c:
             i2c.readinto(result := bytearray(6))
         if (
@@ -328,7 +382,26 @@ class HDC302x:
         relative_humidity = (hum_raw / 65535.0) * 100.0
         return temperature, relative_humidity
 
-    def _alert_command(self, command: int, temp: float, humid: float) -> bool:
+    def _trigger_measurement(self, command: int) -> Tuple[float, float]:
+        # Trigger-on-demand must wait for the conversion before reading, or the device NACKs
+        # or returns stale data (datasheet 7.5.7.2, Fig 7-10). 0x2400 (LP0) tmeas max is
+        # 14.1 ms (datasheet 6.5). The retry absorbs a rare early-read NACK.
+        self._write_command(command)
+        time.sleep(0.0141)
+        for attempt in range(3):
+            try:
+                return self._read_trh()
+            except OSError:  # measurement-not-ready NACK
+                if attempt == 2:
+                    raise
+                time.sleep(0.002)
+
+    def _read_auto(self, command: int = 0xE000) -> Tuple[float, float]:
+        # Auto-mode readout: data is already converted, so read immediately.
+        self._write_command(command)
+        return self._read_trh()
+
+    def _alert_command(self, command: int, temp: float, humid: float) -> None:
         raw_temp = int(((temp + 45.0) / 175.0) * 65535.0)
         raw_rh = int((humid / 100.0) * 65535.0)
         msb_rh = (raw_rh >> 9) & 0x7F
