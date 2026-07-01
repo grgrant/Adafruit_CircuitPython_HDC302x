@@ -299,6 +299,7 @@ class HDC302x:
         :return: True if the high alert is activated, False otherwise.
         """
         status = self._read_command(0xF32D)
+        # bit 9 = RH High Tracking Alert, bit 7 = T High Tracking Alert
         return bool(status & ((1 << 9) | (1 << 7)))
 
     @property
@@ -309,7 +310,7 @@ class HDC302x:
         :return: True if the low alert is activated, False otherwise.
         """
         status = self._read_command(0xF32D)
-        # bit 8 = RH Low Tracking Alert, bit 6 = T Low Tracking Alert (datasheet Table 7-14)
+        # bit 8 = RH Low Tracking Alert, bit 6 = T Low Tracking Alert
         return bool(status & ((1 << 8) | (1 << 6)))
 
     def set_high_alert(self, temp: float, humid: float) -> None:
